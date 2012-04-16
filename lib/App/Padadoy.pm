@@ -1,10 +1,10 @@
 use strict;
 use warnings;
-package App::padadoy;
+package App::Padadoy;
 {
-  $App::padadoy::VERSION = '0.121';
+  $App::Padadoy::VERSION = '0.122';
 }
-#ABSTRACT: Simply deploy PSGI web applications
+#ABSTRACT: Simply deploy PSGI applications
 
 use 5.010;
 use autodie;
@@ -26,12 +26,13 @@ use Plack::Test qw();
 use HTTP::Request::Common qw();
 
 our @commands = qw(init start stop restart config status create deplist cartontest);
+our @configs = qw(user base repository port pidfile logs errrorlog accesslog quiet);
 
 # _msg( $fh, [\$caller], $msg [@args] )
 sub _msg (@) { 
     my $fh = shift;
     my $caller = ref($_[0]) ? ${(shift)} :
-            ((caller(2))[3] =~ /^App::padadoy::(.+)/ ? $1 : '');
+            ((caller(2))[3] =~ /^App::Padadoy::(.+)/ ? $1 : '');
     my $text  = shift;
     say $fh (($caller ? "[$caller] " : "") 
         . (@_ ? sprintf($text, @_) : $text));
@@ -47,12 +48,6 @@ sub msg {
     _msg( *STDOUT, @_ ) unless $self->{quiet};
 }
 
-=method new ( [$configfile] [%configvalues] )
-
-Start padadoy, optionally with some configuration. The command line
-client used C<./padadoy.conf> or C<~/padadoy.conf> as config files.
-
-=cut
 
 sub new {
     my ($class, $config, %values) = @_;
@@ -73,7 +68,7 @@ sub new {
         close $fh;
     }
 
-    foreach (qw(user base repository port pidfile logs errrorlog accesslog quiet)) {
+    foreach (@configs) {
         $self->{$_} = $values{$_} if defined $values{$_};
     }
 
@@ -94,11 +89,6 @@ sub new {
     $self;
 }
 
-=method create
-
-Create an application boilerplate.
-
-=cut
 
 sub create {
     my $self   = shift;
@@ -183,11 +173,6 @@ sub create {
     write_file('logs/error.log','');
 }
 
-=method deplist
-
-List dependencies (not implemented yet).
-
-=cut
 
 sub deplist {
     my $self = shift;
@@ -203,11 +188,6 @@ sub deplist {
     $self->msg("You must initialize a git repository and add remotes");
 }
 
-=method init
-
-Initialize on your deployment machine.
-
-=cut
 
 sub init {
     my $self = shift;
@@ -244,11 +224,6 @@ sub init {
         $self->{user}, hostname, $self->{repository});
 }
 
-=method config
-
-Show configuration values.
-
-=cut
 
 sub config {
     say shift->_config;
@@ -261,11 +236,6 @@ sub _config {
         sort keys %$self;
 }
 
-=method restart
-
-Start or gracefully restart the application if running.
-
-=cut
 
 sub restart {
     my $self = shift;
@@ -280,11 +250,6 @@ sub restart {
     }
 }
 
-=method start
-
-Start starman webserver with carton.
-
-=cut
 
 sub start {
     my $self = shift;
@@ -317,11 +282,6 @@ if (0) { # FIXME
     run('carton','exec','-Ilib','--',@opt);
 }
 
-=method stop
-
-Stop starman webserver.
-
-=cut
 
 sub stop {
     my $self = shift;
@@ -342,11 +302,6 @@ sub _pid {
     return ($pid =~ s/^(\d+).*$/$1/sm ? $pid : 0);
 }
 
-=method status
-
-Show some status information.
-
-=cut
 
 sub status {
     my $self = shift;
@@ -402,11 +357,6 @@ sub _provide_config {
     write_file( $self->{config}, $self->_config );
 }
 
-=head1 method cartontest
-
-Update dependencies with carton and run tests.
-
-=cut
 
 sub cartontest {
     my $self = shift;
@@ -422,49 +372,17 @@ sub cartontest {
 
 1;
 
-=head1 DESCRIPTION
 
-L<padadoy> is a simple script to facilitate deployment of L<Plack> and/or
-L<Dancer> applications, inspired by L<http://dotcloud.com>. It is based on
-L<Carton> module dependency manager, L<Starman> webserver, and git.
+__END__
+=pod
 
-Your application must be managed in a git repository with following structure:
+=head1 NAME
 
-    app/
-       app.psgi      - application startup script
-       lib/          - local perl modules (at least the actual application)
-       t/            - unit tests
-       Makefile.PL   - used to determine required modules and to run tests
-       deplist.txt   - a list of perl modules required to run (o)
-      
-    data/            - persistent data (o)
+App::Padadoy - Simply deploy PSGI applications
 
-    dotcloud.yml     - basic configuration for dotCloud (o)
-    
-    libs -> app/lib                - symlink for OpenShift (o)
-    deplist.txt -> app/deplist.txt - symlink for OpenShift (o)
+=head1 VERSION
 
-    .openshift/      - hooks for OpenShift (o)
-       action_hooks/ - scripts that get run every git push (o)
-
-    logs/            - logfiles (access and error)
-     
-This structure can quickly be created with C<padadoy create> or C<padadoy
-create Your::App::Module>.  Files and directories marked by `(o)` are optional,
-depending on whether you also want to deploy at dotcloud and/or OpenShift.
-
-After some initalization, you can simply deploy new versions with `git push`.
-
-For each deployment machine you create a remote repository and initialize it:
-
-  $ padadoy init
-
-You may then edit the file C<padadoy.conf> to adjust the port and other
-settings. Back on another machine you can simply push to the deployment
-repository with C<git push>. C<padadoy init> installs some hooks in the
-deployment repository so new code is first tested before activation.
-
-I<This is an early preview release, be warned!>
+version 0.122
 
 =head1 SYNOPSIS
 
@@ -503,6 +421,93 @@ Add your deployment machine as git remote and deploy
   $ git remote add ...
   $ git push prod master
 
+=head1 DESCRIPTION
+
+L<padadoy> is a simple script to facilitate deployment of L<Plack> and/or
+L<Dancer> applications, inspired by L<http://dotcloud.com>. It is based on
+L<Carton> module dependency manager, L<Starman> webserver, and git.
+
+Your application must be managed in a git repository with following structure:
+
+    app/
+       app.psgi      - application startup script
+       lib/          - local perl modules (at least the actual application)
+       t/            - unit tests
+       Makefile.PL   - used to determine required modules and to run tests
+       deplist.txt   - a list of perl modules required to run (o)
+      
+    data/            - persistent data (o)
+
+    dotcloud.yml     - basic configuration for dotCloud (o)
+    
+    libs -> app/lib                - symlink for OpenShift (o)
+    deplist.txt -> app/deplist.txt - symlink for OpenShift (o)
+
+    .openshift/      - hooks for OpenShift (o)
+       action_hooks/ - scripts that get run every git push (o)
+
+    logs/            - logfiles (access and error)
+
+This structure can quickly be created with C<padadoy create> or C<padadoy
+create Your::App::Module>.  Files and directories marked by `(o)` are optional,
+depending on whether you also want to deploy at dotcloud and/or OpenShift.
+
+After some initalization, you can simply deploy new versions with `git push`.
+
+For each deployment machine you create a remote repository and initialize it:
+
+  $ padadoy init
+
+You may then edit the file C<padadoy.conf> to adjust the port and other
+settings. Back on another machine you can simply push to the deployment
+repository with C<git push>. C<padadoy init> installs some hooks in the
+deployment repository so new code is first tested before activation.
+
+I<This is an early preview release, be warned!>
+
+=head1 METHODS
+
+=head2 new ( [$configfile] [%configvalues] )
+
+Start padadoy, optionally with some configuration. The command line
+client used C<./padadoy.conf> or C<~/padadoy.conf> as config files.
+
+=head2 create
+
+Create an application boilerplate.
+
+=head2 deplist
+
+List dependencies (not implemented yet).
+
+=head2 init
+
+Initialize on your deployment machine.
+
+=head2 config
+
+Show configuration values.
+
+=head2 restart
+
+Start or gracefully restart the application if running.
+
+=head2 start
+
+Start starman webserver with carton.
+
+=head2 stop
+
+Stop starman webserver.
+
+=head2 status
+
+Show some status information.
+
+=head1 method cartontest
+
+Update dependencies with carton and run tests.
+
 =head1 DEPLOYMENT
 
 Actually, you don't need padadoy if you only deploy at some PaaS provider, but
@@ -518,7 +523,7 @@ The following should work at least with a fresh Ubuntu installation and Perl >=
 
 Now you can install padadoy from CPAN:
 
-  $ sudo cpanm App::padadoy
+  $ sudo cpanm App::Padadoy
 
 Depending on the Perl modules your application requires, you may need some
 additional packages, such as C<libexpat1-dev> for XML. For instance for HTTPS 
@@ -558,4 +563,16 @@ L<http://www.deepakg.com/prog/2011/01/deploying-a-perl-dancer-application-on-ama
 I<What does "padadoy" mean?> The funny name was derived from "PlAck DAncer
 DeplOYment" but it does not mean anything.
 
+=head1 AUTHOR
+
+Jakob Voß
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2012 by Jakob Voß.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
 =cut
+

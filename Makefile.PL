@@ -11,7 +11,7 @@ install_share dist => "shares\/app_padadoy";
 
 
 my %WriteMakefileArgs = (
-  "ABSTRACT" => "Simply deploy PSGI web applications",
+  "ABSTRACT" => "Simply deploy PSGI applications",
   "AUTHOR" => "Jakob Vo\303\237",
   "BUILD_REQUIRES" => {
     "File::Spec::Functions" => 0,
@@ -22,12 +22,12 @@ my %WriteMakefileArgs = (
     "ExtUtils::MakeMaker" => "6.30",
     "File::ShareDir::Install" => "0.03"
   },
-  "DISTNAME" => "App-padadoy",
+  "DISTNAME" => "App-Padadoy",
   "EXE_FILES" => [
     "bin/padadoy"
   ],
   "LICENSE" => "perl",
-  "NAME" => "App::padadoy",
+  "NAME" => "App::Padadoy",
   "PREREQ_PM" => {
     "Carton" => 0,
     "Cwd" => 0,
@@ -47,7 +47,7 @@ my %WriteMakefileArgs = (
     "strict" => 0,
     "warnings" => 0
   },
-  "VERSION" => "0.121",
+  "VERSION" => "0.122",
   "test" => {
     "TESTS" => "t/*.t"
   }

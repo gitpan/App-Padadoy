@@ -6,7 +6,7 @@ Makefile.PL
 README
 bin/padadoy
 dist.ini
-lib/App/padadoy.pm
+lib/App/Padadoy.pm
 shares/app_padadoy/Makefile.PL
 shares/app_padadoy/Module.pm.template
 shares/app_padadoy/app1.psgi
