@@ -1,0 +1,42 @@
+---
+abstract: 'Simply deploy PSGI web applications'
+author:
+  - 'Jakob Voß'
+build_requires:
+  File::Spec::Functions: 0
+  File::Temp: 0
+  Test::More: 0
+configure_requires:
+  ExtUtils::MakeMaker: 6.30
+  File::ShareDir::Install: 0.03
+dynamic_config: 0
+generated_by: 'Dist::Zilla version 4.300014, CPAN::Meta::Converter version 2.120921'
+license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: App-padadoy
+requires:
+  Carton: 0
+  Cwd: 0
+  File::Path: 0
+  File::ShareDir: 0
+  File::Slurp: 0
+  Getopt::Long: 0
+  HTTP::Request::Common: 0
+  IPC::System::Simple: 0
+  List::Util: 0
+  Plack::Handler::Starman: 0
+  Plack::Test: 0
+  Pod::Usage: 0
+  Sys::Hostname: 0
+  Try::Tiny: 0
+  autodie: 0
+  perl: 5.010
+  strict: 0
+  warnings: 0
+resources:
+  bugtracker: https://github.com/nichtich/App-padadoy/issues
+  homepage: https://github.com/nichtich/App-padadoy
+  repository: https://github.com/nichtich/App-padadoy.git
+version: 0.120
