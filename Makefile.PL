@@ -7,7 +7,7 @@ use 5.010;
 use ExtUtils::MakeMaker 6.30;
 
 use File::ShareDir::Install;
-install_share dist => "share";
+install_share dist => "shares\/app_padadoy";
 
 
 my %WriteMakefileArgs = (
@@ -47,7 +47,7 @@ my %WriteMakefileArgs = (
     "strict" => 0,
     "warnings" => 0
   },
-  "VERSION" => "0.120",
+  "VERSION" => "0.121",
   "test" => {
     "TESTS" => "t/*.t"
   }
