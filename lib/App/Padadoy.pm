@@ -2,7 +2,7 @@ use strict;
 use warnings;
 package App::Padadoy;
 {
-  $App::Padadoy::VERSION = '0.122';
+  $App::Padadoy::VERSION = '0.123_4';
 }
 #ABSTRACT: Simply deploy PSGI applications
 
@@ -14,6 +14,9 @@ use File::Slurp;
 use List::Util qw(max);
 use File::ShareDir qw(dist_file);
 use File::Path qw(make_path);
+use File::Basename qw(dirname);
+use File::Spec::Functions;
+use Git::Repository;
 use Sys::Hostname;
 use Cwd;
 
@@ -25,8 +28,10 @@ use Carton qw(0.9.4);
 use Plack::Test qw();
 use HTTP::Request::Common qw();
 
-our @commands = qw(init start stop restart config status create deplist cartontest);
-our @configs = qw(user base repository port pidfile logs errrorlog accesslog quiet);
+our @commands = qw(init start stop restart config status create checkout
+        deplist cartontest remote version);
+our @configs = qw(user base repository port pidfile logs errrorlog accesslog
+        quiet remote);
 
 # _msg( $fh, [\$caller], $msg [@args] )
 sub _msg (@) { 
@@ -74,17 +79,20 @@ sub new {
 
     $self->{user}       ||= getlogin || getpwuid($<);
     $self->{base}       ||= cwd; # '/base/'.$self->{user};
-    $self->{repository} ||= $self->{base}.'/repository';
+    $self->{repository} ||= catdir($self->{base},'repository');
     $self->{port}       ||= 6000;
-    $self->{pidfile}    ||= $self->{base}.'/starman.pid';
-    $self->{logs}       ||= $self->{base}.'/logs';
-    $self->{errorlog}   ||= $self->{logs}.'/error.log'; 
-    $self->{accesslog}  ||= $self->{logs}.'/access.log';
+    $self->{pidfile}    ||= catfile($self->{base},'starman.pid');
+    $self->{logs}       ||= catdir( $self->{base},'logs');
+    $self->{errorlog}   ||= catfile($self->{logs},'error.log');
+    $self->{accesslog}  ||= catfile($self->{logs},'access.log');
 
     # config file
     $self->{config} = $config;
 
     # TODO: validate config values
+
+    fail "Invalid remote value: ".$self->{remote} 
+        if $self->{remote} and $self->{remote} !~ qr{^[^@]+@[^:]+:[~/].*$};
 
     $self;
 }
@@ -108,11 +116,11 @@ sub create {
 
     $self->msg('app/Makefile.PL');
     write_file('app/Makefile.PL',{no_clobber => 1},
-        read_file(dist_file('App-padadoy','Makefile.PL')));
+        read_file(dist_file('App-Padadoy','Makefile.PL')));
 
     if ( $module ) {
         $self->msg("app/app.psgi (calling $module)");
-        my $content = read_file(dist_file('App-padadoy','app2.psgi'));
+        my $content = read_file(dist_file('App-Padadoy','app2.psgi'));
         $content =~ s/YOUR_MODULE/$module/mg;
         write_file('app/app.psgi',{no_clobber => 1},$content);
 
@@ -124,7 +132,7 @@ sub create {
         make_path ($path);
 
         $self->msg("$path/$name.pm");
-        $content = read_file(dist_file('App-padadoy','Module.pm.template'));
+        $content = read_file(dist_file('App-Padadoy','Module.pm.tpl'));
         $content =~ s/YOUR_MODULE/$module/mg;
         write_file( "$path/$name.pm", {no_clobber => 1}, $content );
 
@@ -132,13 +140,13 @@ sub create {
         make_path('app/t');
 
         $self->msg('app/t/basic.t');
-        my $test = read_file(dist_file('App-padadoy','basic.t'));
+        my $test = read_file(dist_file('App-Padadoy','basic.t'));
         $test =~ s/YOUR_MODULE/$module/mg;
         write_file('app/t/basic.t',{no_clobber => 1},$test);
     } else {
         $self->msg('app/app.psgi');
         write_file('app/app.psgi',{no_clobber => 1},
-            read_file(dist_file('App-padadoy','app1.psgi')));
+            read_file(dist_file('App-Padadoy','app1.psgi')));
 
         $self->msg('app/lib/');
         mkdir 'app/lib';
@@ -156,7 +164,12 @@ sub create {
     write_file( 'dotcloud.yml',{no_clobber => 1},
          "www:\n  type: perl\n  approot: app" );
     
-    my %symlinks = (libs => 'app/lib','deplist.txt' => 'app/deplist.txt');
+    my $content = read_file(dist_file('App-Padadoy','index.pl.tpl'));
+    $self->msg("perl/index.pl");
+    make_path("perl");
+    write_file('perl/index.pl',{no_clobber => 1},$content);
+
+    my %symlinks = (libs => 'app/lib','app/deplist.txt' => 'deplist.txt');
     while (my ($from,$to) = each %symlinks) {
         $self->msg("$from -> $to");
         symlink $to, $from;
@@ -165,12 +178,6 @@ sub create {
     # TODO:
     # .openshift/      - hooks for OpenShift (o)
     #   action_hooks/  - scripts that get run every git push (o)
-
-    $self->msg('logs/');
-    mkdir 'logs';
-    write_file('logs/.gitignore','*');
-    write_file('logs/access.log','');
-    write_file('logs/error.log','');
 }
 
 
@@ -209,18 +216,21 @@ sub init {
 
     my $file = $self->{repository}.'/hooks/update';
     $self->msg("$file as executable");
-    write_file($file, read_file(dist_file('App-padadoy','update')));
+    write_file($file, read_file(dist_file('App-Padadoy','update')));
     chmod 0755,$file;
 
     $file = $self->{repository}.'/hooks/post-receive';
     $self->msg("$file as executable");
-    write_file($file, read_file(dist_file('App-padadoy','post-receive')));
+    write_file($file, read_file(dist_file('App-Padadoy','post-receive')));
     chmod 0755,$file;
 
-    $self->msg("logs -> current/logs");
-    symlink 'current/logs', 'logs';
+    $self->msg("logs/");
+    mkdir 'logs';
+ 
+    $self->msg("app -> current/app");
+    symlink 'current/app','app';
 
-    $self->msg("To add as remote: git remote add prod %s@%s:%s", 
+    $self->msg("Pushing to git repository %s@%s:%s will update", 
         $self->{user}, hostname, $self->{repository});
 }
 
@@ -258,6 +268,7 @@ sub start {
 
     chdir $self->{base}.'/app';
 
+
 if (0) { # FIXME
     # check whether dependencies are satisfied
     my @out = split "\n", capture('carton check --nocolor 2>&1');
@@ -267,6 +278,16 @@ if (0) { # FIXME
         exit 1;
     }
 }
+
+    # make sure log files exist
+    foreach my $log (qw(errorlog accesslog)) {
+        my $path = dirname($self->{$log});
+        make_path($path) unless -d $path;
+        if (! -e $self->{$log} ) {
+            open (my $fh, '>>', $self->{$log}); 
+            close $fh;
+        }
+    }
 
     $self->msg("Starting starman as deamon on port %d (pid in %s)",
         $self->{port}, $self->{pidfile});
@@ -358,6 +379,35 @@ sub _provide_config {
 }
 
 
+sub checkout {
+    my ($self, $revision, $directory, $current) = @_;
+    $revision  ||= 'master';
+    $directory ||= catdir($self->{base},$revision);
+
+    $self->msg("checking out $revision to $directory");
+    fail("Working directory already exists") if -e $directory;
+
+    fail("Current working directory not found") 
+        if $current and not -d $current;
+
+    mkdir $directory;
+    my $local = catdir( $current, 'app', 'local' );
+    if (-d $local) {
+        my $newlocal = catdir($directory,'app');
+        $self->msg("rsyncing $local into $newlocal");
+        mkdir $newlocal;
+        run('rsync', '-a', $local, catdir($directory,'app') );
+    }
+
+    $self->msg("repository is ". $self->{repository});
+    my $r = Git::Repository->new(
+        work_tree => $directory, 
+        git_dir   => $self->{repository} 
+    );
+    $r->run( checkout => '-q', '-f', $revision );
+}
+
+
 sub cartontest {
     my $self = shift;
 
@@ -368,6 +418,33 @@ sub cartontest {
     run('perl Makefile.PL');
     run('carton exec -Ilib -- make test');
     run('carton exec -Ilib -- make clean > /dev/null');
+}
+
+
+sub remote {
+    my $self = shift;
+    my $command = shift;
+
+    fail 'no remote configured' unless $self->{remote};
+    fail 'missing remote command' unless $command;
+
+    fail "command $command not supported on remote"
+        unless grep { $_ eq $command } qw(init start stop restart config status version); 
+        # TODO: create deplist checkout cartontest
+    
+    $self->{remote} =~ /^(.+):(.+)$/ or fail 'invalid remote value: '.$self->{remote};
+    my ($userhost,$dir) = ($1,$2);
+    fail 'remote directory should not contain spaces' if $dir =~ /\s/;
+
+    $self->msg("running padadoy on ".$self->{remote});
+
+    run('ssh',$userhost,"cd $dir && padadoy $command ".join ' ', @_);
+}
+
+
+sub version {
+    say 'This is padadoy version '.($App::Padadoy::VERSION || '??');
+    exit;
 }
 
 1;
@@ -382,7 +459,7 @@ App::Padadoy - Simply deploy PSGI applications
 
 =head1 VERSION
 
-version 0.122
+version 0.123_4
 
 =head1 SYNOPSIS
 
@@ -391,50 +468,58 @@ Create a new application and start it locally on your development machine:
   $ padadoy create Your::Module
   $ plackup app/app.psgi
 
-Start application locally as deamon with bundled dependencies
+Start application locally as deamon with bundled dependencies:
 
   $ padadoy cartontest
   $ padadoy start
 
-Show status of your running application and stop it
+Show status of your running application and stop it:
+
   $ padadoy status
   $ padadoy stop
+
+Manage your application files in a git repository:
+
+  $ git add *
+  $ git commit -m "inial commit"
 
 Deploy the application at dotCloud
 
   $ dotcloud create nameoryourapp
   $ dotcloud push nameofyourapp
 
-Collect your application files in a git repository
+Prepare your own deployment machine (as C<remote> in C<padadoy.conf>):
 
-  $ git init
-  $ git add * logs/.gitignore
-  $ git add -f logs/.gitignore
-  $ git commit -m "inial commit"
+  $ padadoy remote init
 
-Prepare your deployment machine
+Add your deployment machine as git remote and deploy:
 
-  $ padadoy init
-
-Add your deployment machine as git remote and deploy
-
-  $ git remote add ...
+  $ git remote add prod ...
   $ git push prod master
 
 =head1 DESCRIPTION
 
-L<padadoy> is a simple script to facilitate deployment of L<Plack> and/or
-L<Dancer> applications, inspired by L<http://dotcloud.com>. It is based on
-L<Carton> module dependency manager, L<Starman> webserver, and git.
+I<This is an early preview release, be warned! Design changes are likely,
+at least until a stable carton 1.0 has been released!>
 
-Your application must be managed in a git repository with following structure:
+L<Padadoy|padadoy> is a command line application to facilitate deployment of
+L<PSGI> applications, inspired by L<http://dotcloud.com>. Padadoy is based on
+the L<Carton> module dependency manager, L<Starman> webserver, and git. In
+short, an application is managed in a git repository and pushed to a remote
+repository for deployment. At the remote server, required modules are installed
+and unit tests are run, to minimize the chance of a broken installation.
+
+An application is managed in a git repository with following structure.  You
+can create it automatically with C<padadoy create> or C<padadoy create
+Your::App::Module>.  
 
     app/
        app.psgi      - application startup script
        lib/          - local perl modules (at least the actual application)
        t/            - unit tests
        Makefile.PL   - used to determine required modules and to run tests
-       deplist.txt   - a list of perl modules required to run (o)
+
+    deplist.txt      - a list of perl modules required to run (o)
       
     data/            - persistent data (o)
 
@@ -442,28 +527,22 @@ Your application must be managed in a git repository with following structure:
     
     libs -> app/lib                - symlink for OpenShift (o)
     deplist.txt -> app/deplist.txt - symlink for OpenShift (o)
+    perl/index.pl                  - CGI script for OpenShift (o)
 
-    .openshift/      - hooks for OpenShift (o)
-       action_hooks/ - scripts that get run every git push (o)
+This directory layout helps to easy deploy on multiple platforms. Files and 
+directories marked by C<(o)> are optional, depending on what platform you want
+to deploy. Padadoy also facilitates deploying to your own servers just like
+a PaaS provider.
 
-    logs/            - logfiles (access and error)
+On the deployment machine there is a directory with the following structure:
 
-This structure can quickly be created with C<padadoy create> or C<padadoy
-create Your::App::Module>.  Files and directories marked by `(o)` are optional,
-depending on whether you also want to deploy at dotcloud and/or OpenShift.
+    repository/      - the bare git repository that the app is pushed to
+    current -> ...   - symbolic link to the current working directory
+    new -> ...       - symbolic link to the new working directory on updates
+    padadoy.conf     - local configuration
 
-After some initalization, you can simply deploy new versions with `git push`.
-
-For each deployment machine you create a remote repository and initialize it:
-
-  $ padadoy init
-
-You may then edit the file C<padadoy.conf> to adjust the port and other
-settings. Back on another machine you can simply push to the deployment
-repository with C<git push>. C<padadoy init> installs some hooks in the
-deployment repository so new code is first tested before activation.
-
-I<This is an early preview release, be warned!>
+You can create this layout with C<padadoy remote init>. After adding the remote
+repository as git remote, you can simply deploy new versions with C<git push>.
 
 =head1 METHODS
 
@@ -504,13 +583,28 @@ Stop starman webserver.
 
 Show some status information.
 
-=head1 method cartontest
+=head2 checkout ( [$revision], [$directory], [$current] ) 
+
+Check out a revision to a new working directory. If no directory name is
+specified, the revision name will be concatenated to the base directory.
+If a current directory is specified, the C<local> directory will first be 
+copied with rsync to avoid reinstallation of dependent packages with carton.
+
+=head2 cartontest
 
 Update dependencies with carton and run tests.
 
+=head2 remote ( $command [@options] )
+
+Run padadoy on a remote machine.
+
+=head2 version
+
+Show version number and exit.
+
 =head1 DEPLOYMENT
 
-Actually, you don't need padadoy if you only deploy at some PaaS provider, but
+Actually, you don't require padadoy if you only deploy at some PaaS provider, but
 deployment at dotCloud and OpenShift is also documented below for convenience.
 
 =head2 On your own server
@@ -532,6 +626,15 @@ you need L<LWP::Protocol::https> that requires C<libnet-ssleay-perl> to build:
   $ sudo apt-get install libnet-ssleay-perl
   $ sudo cpanm LWP::Protocol::https
 
+For each deployment you create a remote repository and initialize it:
+
+  $ padadoy init
+
+You may then edit the file C<padadoy.conf> to adjust the port and other
+settings. Back on another machine you can simply push to the deployment
+repository with C<git push>. C<padadoy init> installs some hooks in the
+deployment repository so new code is first tested before activation.
+
 =head2 On dotCloud
 
 Create a dotCloud account and install the command line client as documented at
@@ -539,11 +642,11 @@ L<https://docloud.com>.
 
 =head2 On OpenShift
 
-Create an OpenShift account, install the command line client, and create a domain,
-as documented at L<https://openshift.redhat.com/app/getting_started> (you may need
-to C<sudo apt-get install libopenssl-ruby>, and to find and fiddle around the client 
-at C</var/lib/gems/1.8/bin/rhc> to actually make use of it). Actually, I have not
-manage to deploy at OpenShift as seamless as at dotCloud.
+Create an OpenShift account, install the command line client, and create a
+domain, as documented at L<https://openshift.redhat.com/app/getting_started>
+(you may need to C<sudo apt-get install libopenssl-ruby>, and to find and
+fiddle around the client at C</var/lib/gems/1.8/bin/rhc> to actually make use
+of it). Att your OpenShift repository as remote and merge.
 
 =head1 SEE ALSO
 
@@ -565,11 +668,11 @@ DeplOYment" but it does not mean anything.
 
 =head1 AUTHOR
 
-Jakob Voß
+Jakob Voss
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2012 by Jakob Voß.
+This software is copyright (c) 2012 by Jakob Voss.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.

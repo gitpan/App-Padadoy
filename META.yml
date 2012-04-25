@@ -1,9 +1,8 @@
 ---
 abstract: 'Simply deploy PSGI applications'
 author:
-  - 'Jakob Voß'
+  - 'Jakob Voss'
 build_requires:
-  File::Spec::Functions: 0
   File::Temp: 0
   Test::More: 0
 configure_requires:
@@ -19,10 +18,13 @@ name: App-Padadoy
 requires:
   Carton: 0
   Cwd: 0
-  File::Path: 0
+  File::Basename: 0
+  File::Path: 2.07
   File::ShareDir: 0
   File::Slurp: 0
+  File::Spec::Functions: 0
   Getopt::Long: 0
+  Git::Repository: 0
   HTTP::Request::Common: 0
   IPC::System::Simple: 0
   List::Util: 0
@@ -39,4 +41,4 @@ resources:
   bugtracker: https://github.com/nichtich/App-Padadoy/issues
   homepage: https://github.com/nichtich/App-Padadoy
   repository: https://github.com/nichtich/App-Padadoy.git
-version: 0.122
+version: 0.123_4
