@@ -2,7 +2,7 @@ use strict;
 use warnings;
 package App::Padadoy;
 {
-  $App::Padadoy::VERSION = '0.123_4';
+  $App::Padadoy::VERSION = '0.123_6';
 }
 #ABSTRACT: Simply deploy PSGI applications
 
@@ -15,7 +15,7 @@ use List::Util qw(max);
 use File::ShareDir qw(dist_file);
 use File::Path qw(make_path);
 use File::Basename qw(dirname);
-use File::Spec::Functions;
+use File::Spec::Functions qw(catdir catfile rel2abs);
 use Git::Repository;
 use Sys::Hostname;
 use Cwd;
@@ -29,7 +29,7 @@ use Plack::Test qw();
 use HTTP::Request::Common qw();
 
 our @commands = qw(init start stop restart config status create checkout
-        deplist cartontest remote version);
+        deplist cartontest remote version update enable);
 our @configs = qw(user base repository port pidfile logs errrorlog accesslog
         quiet remote);
 
@@ -71,6 +71,7 @@ sub new {
             }
         }
         close $fh;
+        $self->{base} = rel2abs(dirname($config));
     }
 
     foreach (@configs) {
@@ -384,11 +385,18 @@ sub checkout {
     $revision  ||= 'master';
     $directory ||= catdir($self->{base},$revision);
 
-    $self->msg("checking out $revision to $directory");
-    fail("Working directory already exists") if -e $directory;
+    my $git_dir = $self->{repository};
+    fail("git repository directory not found: $git_dir") unless -d $git_dir;
 
-    fail("Current working directory not found") 
-        if $current and not -d $current;
+    $self->msg("checking out $revision to $directory");
+    fail("Working directory already exists: $directory") 
+        if -e $directory;
+
+    if ( $current ) {
+        fail("Current working directory not found") unless -d $current;
+    } else {
+        $current =  catdir($self->{base},'current');
+    }
 
     mkdir $directory;
     my $local = catdir( $current, 'app', 'local' );
@@ -399,10 +407,10 @@ sub checkout {
         run('rsync', '-a', $local, catdir($directory,'app') );
     }
 
-    $self->msg("repository is ". $self->{repository});
+    $self->msg("repository is $git_dir");
     my $r = Git::Repository->new(
         work_tree => $directory, 
-        git_dir   => $self->{repository} 
+        git_dir   => $git_dir,
     );
     $r->run( checkout => '-q', '-f', $revision );
 }
@@ -418,6 +426,56 @@ sub cartontest {
     run('perl Makefile.PL');
     run('carton exec -Ilib -- make test');
     run('carton exec -Ilib -- make clean > /dev/null');
+}
+
+
+sub update {
+    my $self = shift;
+    my $revision = shift || 'master';
+
+    $self->msg("updating to revision $revision");
+
+    # check out to $newdir
+    $self->checkout($revision);
+    my $revdir = catdir($self->{base},$revision);
+    my $newdir = catdir($self->{base},'new');
+
+    # TODO: call directly
+    run('padadoy','cartontest',"base=$revdir");
+
+    chdir $self->{base};
+    run('rm','-f','new');
+    symlink $revision, 'new';
+
+    $self->msg("revision $revision checked out and tested at $newdir");
+}
+
+
+sub enable {
+    my $self = shift;
+
+    fail "Missing directory ".$self->{base} unless -d $self->{base};
+    chdir $self->{base};
+
+    my $new     = catdir($self->{base},'new');
+    my $current = catdir($self->{base},'current');
+
+    fail "Missing directory $new" unless -d $new;
+ 
+    $self->msg("$new -> current");
+    run('rm','-f','current');
+    run('mv','new','current');
+
+    chdir $current;
+
+    # TODO: re-read full configuration (?)
+    $self->{base} = $current;
+
+    # graceful restart seems broken
+    $self->stop;
+    $self->start;
+
+    # TODO: cleanup old revisions?
 }
 
 
@@ -459,7 +517,7 @@ App::Padadoy - Simply deploy PSGI applications
 
 =head1 VERSION
 
-version 0.123_4
+version 0.123_6
 
 =head1 SYNOPSIS
 
@@ -548,8 +606,7 @@ repository as git remote, you can simply deploy new versions with C<git push>.
 
 =head2 new ( [$configfile] [%configvalues] )
 
-Start padadoy, optionally with some configuration. The command line
-client used C<./padadoy.conf> or C<~/padadoy.conf> as config files.
+Start padadoy, optionally with some configuration (C<padadoy.conf>).
 
 =head2 create
 
@@ -593,6 +650,16 @@ copied with rsync to avoid reinstallation of dependent packages with carton.
 =head2 cartontest
 
 Update dependencies with carton and run tests.
+
+=head2 update ( [$revision] )
+
+Checkout a revision, test it, and create a symlink called C<new> on success.
+
+=head2 enable
+
+This method is called as post-receive hook in the deployment repository.  It
+creates (or changes) the symlink C<new> to the symlink C<current> and
+restarts the application.
 
 =head2 remote ( $command [@options] )
 
@@ -647,6 +714,18 @@ domain, as documented at L<https://openshift.redhat.com/app/getting_started>
 (you may need to C<sudo apt-get install libopenssl-ruby>, and to find and
 fiddle around the client at C</var/lib/gems/1.8/bin/rhc> to actually make use
 of it). Att your OpenShift repository as remote and merge.
+
+=head1 BACKGROUND
+
+The remote repository contains two git hooks, which are enabled by 
+C<padadoy init>: the C<update> hook calls C<padadoy update> with the
+revision hash that is pushed to the repository:
+
+    #!/bin/bash
+    newrev="$3"
+    padadoy update $newrev
+
+On success, the C<post-receive> hook calls C<padadoy enable> to
 
 =head1 SEE ALSO
 

@@ -15,5 +15,6 @@ shares/app_padadoy/basic.t
 shares/app_padadoy/index.pl.tpl
 shares/app_padadoy/post-receive
 shares/app_padadoy/update
+shares/app_padadoy/upstart.conf
 t/compile.t
 t/create.t
