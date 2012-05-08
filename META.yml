@@ -33,6 +33,7 @@ requires:
   Pod::Usage: 0
   Sys::Hostname: 0
   Try::Tiny: 0
+  YAML::Any: 0
   autodie: 0
   perl: 5.010
   strict: 0
@@ -41,4 +42,4 @@ resources:
   bugtracker: https://github.com/nichtich/App-Padadoy/issues
   homepage: https://github.com/nichtich/App-Padadoy
   repository: https://github.com/nichtich/App-Padadoy.git
-version: 0.123_6
+version: 0.125

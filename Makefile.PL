@@ -45,11 +45,12 @@ my %WriteMakefileArgs = (
     "Pod::Usage" => 0,
     "Sys::Hostname" => 0,
     "Try::Tiny" => 0,
+    "YAML::Any" => 0,
     "autodie" => 0,
     "strict" => 0,
     "warnings" => 0
   },
-  "VERSION" => "0.123_6",
+  "VERSION" => "0.125",
   "test" => {
     "TESTS" => "t/*.t"
   }
